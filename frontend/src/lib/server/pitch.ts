@@ -107,9 +107,15 @@ Rules: tone is ${tone}. Body under 190 words, plain text, no markdown, sign off 
 - Proposed package: host-read mid-roll in 3 episodes, an on-air segment, a listener code`,
     { temperature: 0.6, maxTokens: 1400 },
   );
-  if (!out?.subject || !out?.body) return { ...fallback, source: "template" };
+  if (!out?.subject || !out?.body) {
+    console.warn("pitch: Groq returned no usable draft", JSON.stringify(out)?.slice(0, 200));
+    return { ...fallback, source: "template" };
+  }
   const text = [out.subject, out.body, out.ad_read ?? "", ...(out.follow_ups ?? []).map((f) => `${f.subject} ${f.body}`)].join("\n");
-  if (!onlyAllowedNumbers(text, allowed)) return { ...fallback, source: "template" };
+  if (!onlyAllowedNumbers(text, allowed)) {
+    console.warn("pitch: draft rejected for unlisted numbers", (text.match(/\d[\d,]*(\.\d+)?/g) ?? []).join(" "), "allowed", allowed.join(" "));
+    return { ...fallback, source: "template" };
+  }
   return {
     subject: out.subject.slice(0, 200),
     body: out.body.slice(0, 4000),
