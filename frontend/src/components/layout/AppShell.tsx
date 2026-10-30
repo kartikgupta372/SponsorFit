@@ -8,6 +8,7 @@ import {
   FileText,
   Gem,
   KanbanSquare,
+  BookOpen,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -41,6 +42,7 @@ const NAV: NavItem[] = [
   { href: "/app/pitches", label: "Pitches", icon: Mail, match: (p) => p.startsWith("/app/pitches") },
   { href: "/app/pipeline", label: "Pipeline", icon: KanbanSquare, match: (p) => p.startsWith("/app/pipeline"), mobile: true },
   { href: "/app/kits", label: "Media kits", icon: FileText, match: (p) => p.startsWith("/app/kits") },
+  { href: "/app/guide", label: "How to use", icon: BookOpen, match: (p) => p.startsWith("/app/guide") },
   { href: "/app/settings", label: "Settings", icon: Settings, match: (p) => p.startsWith("/app/settings"), mobile: true },
 ];
 

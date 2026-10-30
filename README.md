@@ -92,6 +92,8 @@ Supabase: Postgres with Row Level Security, plus Auth
 
 Schema: [`supabase/migrations`](supabase/migrations).
 
+> Full setup and usage instructions: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
+
 ## Run it locally
 
 Requirements: Node 20 or later, a Supabase project, a Qloo API key and a Groq API key.
@@ -120,7 +122,7 @@ frontend/              Next.js app: UI, API route handlers, agent
   src/lib/server/      agent.ts, qloo.ts, groq.ts, pitch.ts (server only)
   src/lib/scoring.ts   the Fit Score
 supabase/migrations/   database schema and RLS policies
-backend/               early Python exploration scripts for the Qloo API (spike)
+backend/               early Python exploration scripts (not needed to run the app)
 docs/                  learning notes
 ```
 
