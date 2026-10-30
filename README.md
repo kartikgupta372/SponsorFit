@@ -94,6 +94,32 @@ Schema: [`supabase/migrations`](supabase/migrations).
 
 > Full setup and usage instructions: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
 
+## Backend manual
+
+There is no separate backend server. The backend is part of the Next.js app and starts with it
+(`npm run dev` in `frontend/`). It has three parts:
+
+| Part | Where | Job |
+|---|---|---|
+| API routes | `frontend/src/app/api/` | `POST /api/analyses` creates a show and run, `POST /api/analyses/[id]/run` streams the agent (NDJSON), `GET /api/qloo/search` is the typeahead, `POST /api/pitch` writes a pitch, `POST /api/kits` publishes a media kit |
+| Agent | `frontend/src/lib/server/agent.ts` | Seven steps: resolve, profile, discover, enrich, score, critic, generate. Max 40 Qloo calls per run |
+| Clients | `frontend/src/lib/server/qloo.ts`, `groq.ts` | Qloo taste graph and Groq LLM. Without a valid Qloo key the app falls back to a labeled sample graph |
+| Database | Supabase Postgres (`supabase/migrations/`) | Seven tables with Row Level Security; auth by Supabase |
+
+Server-only secrets (`QLOO_API_KEY`, `GROQ_API_KEY`) are read on the server and never sent to the browser.
+Every API route checks the signed-in user, and the database enforces `user_id = auth.uid()` as a second lock.
+
+Quick check that the backend is healthy:
+
+```bash
+cd frontend
+npm install        # first time, or if you see "next is not recognized"
+npm run dev        # http://localhost:3000
+```
+
+Then press *Try the demo*, run an analysis, and watch the seven steps stream. See
+[docs/USER_MANUAL.md](docs/USER_MANUAL.md) for env variables and troubleshooting.
+
 ## Run it locally
 
 Requirements: Node 20 or later, a Supabase project, a Qloo API key and a Groq API key.
