@@ -63,3 +63,25 @@ once with a key set and once with the key removed. Compare the output and the er
 
 **Try it yourself:** run the three spike commands from the file's docstring on a podcast you
 listen to, and write down: which entity types came back, and what field holds the entity ID?
+
+## Lesson 3: The frontend design system
+- **Tokens first.** The palette (eggplant, violet, orchid, signal orange) lives in `tailwind.config.ts`, so every screen uses names like `bg-eggplant-900`, never raw hex codes.
+- **One "do this" colour.** Signal orange is used only for primary actions, so the eye always knows where to click.
+- **Charts without libraries.** The Fit ring, index bars and heatmap are hand-written SVG. Small bundle, full control.
+- **Accessibility.** Visible labels, `role="radiogroup"`, `role="tab"` and `role="switch"`, focus rings, and reduced-motion support.
+
+## Lesson 4: Auth and data with Supabase
+- **Row Level Security (RLS)** is the real security boundary. Each table has `using (auth.uid() = user_id)`, so even if the browser asks for someone else's rows, Postgres refuses.
+- **`@supabase/ssr`** keeps the session in cookies. `middleware.ts` refreshes it and protects `/app/*`.
+- **Server components** load data (`src/lib/server/data.ts`). Client components only handle interaction.
+- **A trigger** (`handle_new_user`) creates a profile row for every new user.
+
+## Lesson 5: The agent
+- **A pipeline, not a free-roaming agent.** Seven fixed steps make it fast, cheap and debuggable. The LLM is used only where judgment or writing is needed.
+- **Streaming.** `/api/analyses/[id]/run` returns a `ReadableStream` of NDJSON events (`step`, `call`, `profile`, `match`, `done`). The browser reads it with `res.body.getReader()`.
+- **Deterministic scoring** in `src/lib/scoring.ts`: the same inputs always give the same score.
+- **Guardrails.** `onlyAllowedNumbers` rejects LLM text with invented statistics. Budgets cap Qloo calls. A run lock (`update ... where status = 'queued'`) makes starting a run idempotent.
+
+## Lesson 6: Shipping
+- One Next.js app on Vercel holds the UI, the API and the agent: one deploy, one URL.
+- Secrets live only in Vercel environment variables. `NEXT_PUBLIC_*` values are safe to expose; the Qloo and Groq keys never are.
