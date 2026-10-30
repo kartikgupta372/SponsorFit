@@ -32,7 +32,9 @@ function facts(show: ShowRow, match: MatchRow, analysis: AnalysisRow) {
   };
 }
 
-export function templatePitch(show: ShowRow, match: MatchRow, analysis: AnalysisRow, tone: Tone): PitchDraft {
+export function templatePitch(show: ShowRow, rawMatch: MatchRow, analysis: AnalysisRow, tone: Tone): PitchDraft {
+  // "Supply Co." at the end of a sentence would print "Co.." so drop a trailing dot.
+  const match = { ...rawMatch, name: rawMatch.name.replace(/\.$/, "") };
   const { rate, shared, themes } = facts(show, match, analysis);
   const unit = show.platform === "podcast" ? "listeners per episode" : "viewers per video";
   const kind = show.platform === "podcast" ? "podcast" : "YouTube channel";

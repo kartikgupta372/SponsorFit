@@ -134,6 +134,17 @@ function templateReasons(m: DraftMatch, rankByAffinity: number, total: number): 
   return out.slice(0, 3);
 }
 
+/** Deterministic brand-safety net, applied even when the LLM critic is unavailable. */
+const SAFETY_RULES: [string, RegExp][] = [
+  ["alcohol", /\b(spirits?|whiske?y|bourbon|vodka|gin|rum|tequila|mezcal|brew(ery|ing)?|beer|wine(ry)?|winery|cider|liquor|distill(ery|ing)|sake|champagne|ale)\b/i],
+  ["gambling", /\b(casino|bet(ting)?|sportsbook|poker|lottery|slots?|wager|bingo)\b/i],
+  ["adult", /\b(adult|xxx|erotic|lingerie|strip club|onlyfans)\b/i],
+];
+function safetyOf(name: string, category: string, tags: string[]): string | null {
+  const text = [name, category, ...tags].join(" ");
+  return SAFETY_RULES.find(([, re]) => re.test(text))?.[0] ?? null;
+}
+
 /* ---------- the pipeline ---------- */
 
 export async function runAgent(
@@ -276,6 +287,7 @@ export async function runAgent(
     profile.episodeIdeas = (critic.episode_ideas ?? []).slice(0, 4).filter((e) => e?.title && e?.why);
     profile.summary = critic.summary;
   }
+  for (const d of drafts) d.safety = d.safety ?? safetyOf(d.name, d.category, d.tags);
   for (const d of drafts) emit({ type: "match", match: d });
   emit({ type: "profile", profile });
   end("critic", groqEnabled() ? "Reasons checked against the data" : "Reasons written from the data");

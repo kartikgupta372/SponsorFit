@@ -176,7 +176,10 @@ export const AGE_LABELS: Record<string, string> = {
 
 export function ageBars(raw: Record<string, number> | undefined): IndexBar[] {
   if (!raw) return [];
-  return Object.entries(raw).map(([k, v]) => ({ label: AGE_LABELS[k] ?? k.replace(/_/g, " "), index: Math.round(v * 100) }));
+  const order = Object.keys(AGE_LABELS);
+  return Object.entries(raw)
+    .sort(([a], [b]) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99))
+    .map(([k, v]) => ({ label: AGE_LABELS[k] ?? k.replace(/_/g, " "), index: Math.round(v * 100) }));
 }
 
 /** Rate advisor: CPM range times audience, nudged by fit. Guidance, not a quote. */

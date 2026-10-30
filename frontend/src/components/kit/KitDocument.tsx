@@ -84,7 +84,7 @@ export function KitDocument({ data }: { data: KitData }) {
               {show.name}&apos;s audience already loves what {brand.name} stands for.
             </h2>
             <p className="mt-3 max-w-xl leading-relaxed text-eggplant-700">
-              Measured with Qloo&apos;s taste graph, this audience scores {brand.fit} out of 100 for fit with {brand.name}.
+              Measured with Qloo&apos;s taste graph, this audience scores {brand.fit} out of 100 for fit with {brand.name.replace(/\.$/, "")}.
             </p>
           </div>
         </section>

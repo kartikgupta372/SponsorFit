@@ -75,27 +75,27 @@ export function CoverArt({
       {rings.map((ring, i) => (
         <circle
           key={i}
-          cx={sunX}
-          cy={sunY}
-          r={ring.r}
+          cx={Math.round(sunX * 100) / 100}
+          cy={Math.round(sunY * 100) / 100}
+          r={Math.round(ring.r * 100) / 100}
           fill="none"
           stroke={c1}
           strokeWidth={ring.w}
-          opacity={ring.o}
+          opacity={Math.round(ring.o * 100) / 100}
         />
       ))}
-      <circle cx={sunX} cy={sunY} r={sunR} fill={`url(#${id}-sun)`} />
+      <circle cx={Math.round(sunX * 100) / 100} cy={Math.round(sunY * 100) / 100} r={Math.round(sunR * 100) / 100} fill={`url(#${id}-sun)`} />
       <g opacity="0.9">
         {bars.map((b, i) => (
           <rect
             key={i}
             x={b.x}
-            y={196 - b.h}
+            y={Math.round((196 - b.h) * 100) / 100}
             width="4.5"
-            height={b.h}
+            height={Math.round(b.h * 100) / 100}
             rx="2.25"
             fill={i % 3 === 0 ? c2 : c3}
-            opacity={0.35 + (i % 4) * 0.15}
+            opacity={Math.round((0.35 + (i % 4) * 0.15) * 100) / 100}
           />
         ))}
       </g>

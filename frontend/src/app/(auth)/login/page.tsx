@@ -100,18 +100,6 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <div className="mt-6 rounded-2xl border border-dashed border-white/15 p-4">
-        <p className="text-sm text-ink-soft">Just looking around?</p>
-        <button
-          type="button"
-          onClick={() => run("demo", signInDemo)}
-          disabled={busy !== null}
-          className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-orchid-300 hover:text-orchid-200 disabled:opacity-60"
-        >
-          Explore the demo workspace <ArrowRight size={15} />
-        </button>
-      </div>
-
       <p className="mt-8 text-center text-sm text-ink-muted">
         New to SponsorFit?{" "}
         <Link href="/signup" className="font-semibold text-violet-300 hover:text-orchid-300">
