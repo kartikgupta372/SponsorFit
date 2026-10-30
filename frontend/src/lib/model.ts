@@ -204,3 +204,17 @@ export function hashSeed(s: string): number {
   return Math.abs(h);
 }
 export const hueOf = (s: string) => hashSeed(s) % 360;
+
+export const DAILY_LIMIT = 15;
+
+/** Snapshot of everything a brand sees on the public media kit. */
+export function buildKit(show: ShowRow, match: MatchRow, analysis: AnalysisRow): KitData {
+  const profile = "themes" in analysis.profile ? (analysis.profile as AudienceProfile) : null;
+  return {
+    show: { name: show.name, platform: show.platform, audience: show.audience_size },
+    brand: { name: match.name, category: match.category, fit: match.fit, parts: match.parts, reasons: match.reasons, tags: match.tags },
+    audience: { age: profile?.age ?? [], brandAge: ageBars(match.demographics?.age), themes: profile?.themes.slice(0, 8) ?? [] },
+    rate: (({ low, high }) => ({ low, high }))(rateFor(show.audience_size, match.fit)),
+    source: analysis.source,
+  };
+}

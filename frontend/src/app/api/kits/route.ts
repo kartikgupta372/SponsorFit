@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/supabase/server";
-import { ageBars, rateFor, type AnalysisRow, type KitData, type MatchRow, type ShowRow } from "@/lib/model";
+import { buildKit, type AnalysisRow, type MatchRow, type ShowRow } from "@/lib/model";
 
 /** Publish (or refresh) the public media kit for one match. Returns its slug. */
 export async function POST(req: NextRequest) {
@@ -17,14 +17,7 @@ export async function POST(req: NextRequest) {
   const show = s as ShowRow | null;
   if (!analysis || !show) return NextResponse.json({ error: "Analysis not found." }, { status: 404 });
 
-  const profile = "themes" in analysis.profile ? analysis.profile : null;
-  const data: KitData = {
-    show: { name: show.name, platform: show.platform, audience: show.audience_size },
-    brand: { name: match.name, category: match.category, fit: match.fit, parts: match.parts, reasons: match.reasons, tags: match.tags },
-    audience: { age: profile?.age ?? [], brandAge: ageBars(match.demographics?.age), themes: profile?.themes.slice(0, 8) ?? [] },
-    rate: rateFor(show.audience_size, match.fit),
-    source: analysis.source,
-  };
+  const data = buildKit(show, match, analysis);
 
   const { data: existing } = await sb.from("kits").select("slug").eq("match_id", match.id).maybeSingle();
   const base = `${show.name}-${match.name}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);

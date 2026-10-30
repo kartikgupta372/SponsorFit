@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { ArrowLeft, Check, Copy, ExternalLink, Mail, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, Check, Copy, Loader2, Mail, Save, Send, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { BrandMark } from "@/components/art/BrandMark";
 import { FitRing } from "@/components/charts/FitRing";
-import { DEFAULT_SHOW_ID, adRead, followUps, getBrand, getShow, pitchFor, rateRange, type Tone } from "@/lib/mock-data";
+import { supabaseBrowser } from "@/lib/supabase/client";
+import { hueOf, rateFor, type DealRow, type MatchRow, type PitchRow, type ShowRow, type Tone } from "@/lib/model";
 import { cn } from "@/lib/cn";
 
 const TONES: Tone[] = ["Casual", "Professional", "Bold"];
@@ -39,25 +39,70 @@ function CopyBox({ label, text }: { label: string; text: string }) {
   );
 }
 
-export function PitchStudio() {
-  const { id } = useParams<{ id: string }>();
-  const brand = getBrand(id);
-  const show = getShow(DEFAULT_SHOW_ID);
-
-  const [tone, setTone] = useState<Tone>("Professional");
-  const draft = pitchFor(brand.id, show.id, tone);
-  const [subject, setSubject] = useState(draft.subject);
-  const [body, setBody] = useState(draft.body);
+export function PitchStudio({ match, show, pitch, deal }: { match: MatchRow; show: ShowRow; pitch: PitchRow | null; deal: DealRow | null }) {
+  const brand = match;
+  const [tone, setTone] = useState<Tone>(pitch?.tone ?? "Professional");
+  const [subject, setSubject] = useState(pitch?.subject ?? "");
+  const [body, setBody] = useState(pitch?.body ?? "");
+  const [follow, setFollow] = useState(pitch?.follow_ups ?? []);
+  const [ad, setAd] = useState(pitch?.ad_read ?? "");
   const [side, setSide] = useState<SideTab>("Follow-ups");
   const [copied, setCopied] = useState(false);
-  const [pitched, setPitched] = useState(false);
+  const [pitched, setPitched] = useState(!!deal);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved">("idle");
+  const [source, setSource] = useState<"ai" | "template" | null>(null);
+  const [error, setError] = useState<string>();
+  const first = useRef(true);
 
-  // Switching tone writes a fresh draft. (Edits to the current text are replaced.)
+  async function draft(t: Tone) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const res = await fetch("/api/pitch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ matchId: match.id, tone: t }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not draft the pitch.");
+      setSubject(data.pitch.subject);
+      setBody(data.pitch.body);
+      setFollow(data.pitch.follow_ups ?? []);
+      setAd(data.pitch.ad_read ?? "");
+      setSource(data.source);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // First visit: draft automatically. Later tone changes redraft.
   useEffect(() => {
-    const d = pitchFor(brand.id, show.id, tone);
-    setSubject(d.subject);
-    setBody(d.body);
-  }, [tone, brand.id, show.id]);
+    if (first.current) {
+      first.current = false;
+      if (!pitch) void draft(tone);
+      return;
+    }
+    void draft(tone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tone]);
+
+  async function save() {
+    setSaved("saving");
+    const sb = supabaseBrowser();
+    await sb.from("pitches").update({ subject, body, tone, updated_at: new Date().toISOString() }).eq("match_id", match.id);
+    setSaved("saved");
+    setTimeout(() => setSaved("idle"), 1800);
+  }
+
+  async function markPitched() {
+    const sb = supabaseBrowser();
+    const { data: u } = await sb.auth.getUser();
+    if (!u.user) return;
+    const { error: err } = await sb
+      .from("deals")
+      .upsert({ user_id: u.user.id, match_id: match.id, stage: "Pitched", amount: rate.low, note: `Pitched on ${new Date().toLocaleDateString()}` }, { onConflict: "match_id" });
+    if (err) setError("Could not add this deal to your pipeline.");
+    else setPitched(true);
+  }
 
   async function copyAll() {
     try {
@@ -70,16 +115,16 @@ export function PitchStudio() {
   }
 
   const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  const rate = rateRange(show.audience, brand.fit);
-  const follow = followUps(brand.id, show.id);
+  const rate = rateFor(show.audience_size, brand.fit);
+  const pct = (n: number) => Math.round(n * 100);
 
   const evidence = [
     ["Fit Score", `${brand.fit} / 100`],
-    ["Affinity", `${Math.round(brand.parts.affinity * 100)}`],
-    ["Demographic match", `${Math.round(brand.parts.demographic * 100)}%`],
-    ["Taste overlap", `${Math.round(brand.parts.taste * 100)}`],
-    ["Novelty", `${Math.round(brand.parts.novelty * 100)}`],
-    ["Audience per episode", show.audience.toLocaleString("en-US")],
+    ["Taste affinity", `${pct(brand.parts.affinity)}`],
+    ["Demographic match", `${pct(brand.parts.demographic)}%`],
+    ["Taste overlap", `${pct(brand.parts.taste)}`],
+    ["Novelty", `${pct(brand.parts.novelty)}`],
+    [show.platform === "podcast" ? "Listeners per episode" : "Views per video", show.audience_size.toLocaleString("en-US")],
     ["Suggested rate", `$${rate.low.toLocaleString("en-US")} to $${rate.high.toLocaleString("en-US")}`],
   ];
 
@@ -94,7 +139,7 @@ export function PitchStudio() {
 
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <BrandMark name={brand.name} hue={brand.hue} size={56} />
+          <BrandMark name={brand.name} hue={hueOf(brand.name)} size={56} />
           <div>
             <p className="label mb-1">Pitch studio</p>
             <h1 className="font-display text-3xl font-semibold tracking-tight">{brand.name}</h1>
@@ -102,7 +147,7 @@ export function PitchStudio() {
         </div>
         <div className="flex items-center gap-3">
           <FitRing score={brand.fit} size={64} stroke={6} label={false} />
-          <Chip tone="mint">Evidence attached</Chip>
+          <Chip tone="mint">{source === "template" ? "Template draft" : "Grounded in Qloo data"}</Chip>
         </div>
       </div>
 
@@ -126,7 +171,9 @@ export function PitchStudio() {
                 </button>
               ))}
             </div>
-            <p className="text-xs text-ink-faint">Switching tone writes a fresh draft.</p>
+            <p className="flex items-center gap-1.5 text-xs text-ink-faint">
+              {busy ? <><Loader2 size={13} className="animate-spin" /> Writing with the agent...</> : <><Sparkles size={13} /> Switching tone writes a fresh draft</>}
+            </p>
           </div>
 
           <label htmlFor="subject" className="mb-1.5 block text-sm font-medium text-ink-soft">Subject</label>
@@ -143,6 +190,7 @@ export function PitchStudio() {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={17}
+            disabled={busy}
             className="w-full resize-y rounded-xl border border-white/10 bg-eggplant-900/70 px-4 py-3 text-[15px] leading-relaxed focus:border-orchid-400/70 focus:outline-none focus:ring-2 focus:ring-orchid-400/20"
           />
 
@@ -154,14 +202,19 @@ export function PitchStudio() {
             <Button href={mailto} variant="outline">
               <Mail size={16} /> Open in email app
             </Button>
-            <Button onClick={() => setPitched(true)} disabled={pitched} className="sm:ml-auto">
+            <Button variant="outline" onClick={save} disabled={busy || saved === "saving"}>
+              {saved === "saved" ? <Check size={16} /> : <Save size={16} />}
+              {saved === "saved" ? "Saved" : "Save edits"}
+            </Button>
+            <Button onClick={markPitched} disabled={pitched || busy} className="sm:ml-auto">
               {pitched ? <Check size={16} /> : <Send size={16} />}
               {pitched ? "Marked as pitched" : "Mark as pitched"}
             </Button>
           </div>
+          {error && <p role="alert" className="mt-3 text-sm text-signal-400">{error}</p>}
           {pitched && (
             <p className="mt-3 text-sm text-mint" role="status">
-              Saved. Track the reply on your{" "}
+              Added to your pipeline. Track the reply on your{" "}
               <Link href="/app/pipeline" className="underline hover:text-ink">pipeline board</Link>.
             </p>
           )}
@@ -191,6 +244,7 @@ export function PitchStudio() {
           <div id="side-panel" role="tabpanel" aria-labelledby={`side-${side}`} key={side} className="animate-fade-up">
             {side === "Follow-ups" && (
               <ul className="space-y-4">
+                {follow.length === 0 && <p className="text-sm text-ink-muted">Drafting...</p>}
                 {follow.map((f) => (
                   <li key={f.when} className="rounded-xl border border-white/[0.08] bg-eggplant-900/50 p-4">
                     <div className="mb-2 flex items-center justify-between">
@@ -208,9 +262,9 @@ export function PitchStudio() {
               <div className="rounded-xl border border-white/[0.08] bg-eggplant-900/50 p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <Chip tone="orchid">About 20 seconds</Chip>
-                  <CopyBox label="ad read" text={adRead(brand.id, show.id)} />
+                  <CopyBox label="ad read" text={ad} />
                 </div>
-                <p className="text-sm leading-relaxed text-ink-soft">{adRead(brand.id, show.id)}</p>
+                <p className="text-sm leading-relaxed text-ink-soft">{ad || "Drafting..."}</p>
                 <p className="mt-3 text-xs text-ink-faint">Edit it so it sounds like you before you record.</p>
               </div>
             )}
@@ -228,12 +282,8 @@ export function PitchStudio() {
                     </div>
                   ))}
                 </dl>
-                <Link
-                  href={`/kit/${brand.id}`}
-                  target="_blank"
-                  className="mt-4 inline-flex items-center gap-1.5 text-sm text-violet-300 hover:text-orchid-300"
-                >
-                  <ExternalLink size={14} /> Attach the public media kit
+                <Link href={`/app/sponsors/${brand.id}`} className="mt-4 inline-flex items-center gap-1.5 text-sm text-violet-300 hover:text-orchid-300">
+                  Publish the media kit to attach it
                 </Link>
               </div>
             )}

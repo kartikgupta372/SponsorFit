@@ -30,13 +30,17 @@ interface AuthApi {
 
 const AuthContext = createContext<AuthApi | null>(null);
 
+/** Public demo login (its data is sample-only and protected by RLS like any account). */
+const DEMO_EMAIL = "demo@sponsorfit.app";
+const DEMO_PASSWORD = "SponsorFit-demo-2026";
+
 function toUser(u: SbUser | null | undefined): User | null {
   if (!u) return null;
   const email = u.email ?? "";
   const meta = (u.user_metadata ?? {}) as { name?: string };
   const fallback = email ? email.split("@")[0].replace(/[._-]+/g, " ") : "Demo creator";
   const name = meta.name || fallback.charAt(0).toUpperCase() + fallback.slice(1);
-  return { id: u.id, name, email: email || "Demo workspace", provider: u.is_anonymous ? "demo" : "email" };
+  return { id: u.id, name, email: email || "Demo workspace", provider: u.is_anonymous || email === DEMO_EMAIL ? "demo" : "email" };
 }
 
 /** Turn Supabase's messages into ones that say what to do next. */
@@ -95,7 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInDemo() {
         const { data } = await sb.auth.getUser();
         if (data.user) return;
-        const { error } = await sb.auth.signInAnonymously({ options: { data: { name: "Demo creator" } } });
+        // Preferred: a private anonymous workspace per visitor.
+        const anon = await sb.auth.signInAnonymously({ options: { data: { name: "Demo creator" } } });
+        if (!anon.error) return;
+        // Fallback when anonymous sign-ins are off: the shared, pre-confirmed demo account.
+        const { error } = await sb.auth.signInWithPassword({ email: DEMO_EMAIL, password: DEMO_PASSWORD });
         fail(error);
       },
       signOut,

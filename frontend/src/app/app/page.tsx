@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Gem, Mic, Play, Radar, Send, Trophy, Reply, Plus } from "lucide-react";
+import { ArrowRight, Gem, Mic, Play, Radar, Send, Trophy, Reply, Plus, Sparkles } from "lucide-react";
 import { Greeting } from "@/components/dashboard/Greeting";
 import { StatCard } from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/Button";
@@ -7,8 +7,10 @@ import { Chip } from "@/components/ui/Chip";
 import { CoverArt } from "@/components/art/CoverArt";
 import { BrandMark } from "@/components/art/BrandMark";
 import { FitRing } from "@/components/charts/FitRing";
-import { BRANDS, DEALS, SHOWS, dealStats } from "@/lib/mock-data";
-import type { DealStage } from "@/lib/types";
+import { loadDeals, loadShows, loadTopFits, session } from "@/lib/server/data";
+import { compact, hashSeed, hueOf, type DealStage, type MatchRow } from "@/lib/model";
+
+export const dynamic = "force-dynamic";
 
 const STAGES: DealStage[] = ["Pitched", "Replied", "Negotiating", "Won", "Lost"];
 const STAGE_BAR: Record<DealStage, string> = {
@@ -19,10 +21,21 @@ const STAGE_BAR: Record<DealStage, string> = {
   Lost: "bg-white/25",
 };
 
-export default function DashboardPage() {
-  const stats = dealStats();
-  const maxStage = Math.max(...STAGES.map((s) => DEALS.filter((d) => d.stage === s).length));
-  const gems = BRANDS.filter((b) => b.hiddenGem && !b.safety).slice(0, 3);
+export default async function DashboardPage() {
+  const { sb } = await session();
+  const [shows, deals] = await Promise.all([loadShows(), loadDeals()]);
+  const tops = await loadTopFits(shows.map((s) => s.analysisId));
+  const latest = shows.find((s) => s.status === "complete");
+  const { data: gemRows } = latest
+    ? await sb.from("matches").select("*").eq("analysis_id", latest.analysisId).eq("hidden_gem", true).is("safety", null).order("fit", { ascending: false }).limit(3)
+    : { data: [] };
+  const gems = (gemRows ?? []) as MatchRow[];
+
+  const sent = deals.length;
+  const replied = deals.filter((d) => d.stage !== "Pitched").length;
+  const won = deals.filter((d) => d.stage === "Won");
+  const open = deals.filter((d) => d.stage === "Replied" || d.stage === "Negotiating").length;
+  const maxStage = Math.max(1, ...STAGES.map((s) => deals.filter((d) => d.stage === s).length));
 
   return (
     <div className="space-y-8">
@@ -36,16 +49,31 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      {/* Stat cards */}
+      {shows.length === 0 && (
+        <section className="relative overflow-hidden rounded-3xl border border-orchid-400/30 bg-gradient-to-br from-violet-700/40 via-eggplant-850 to-eggplant-900 p-7 sm:p-10">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-signal-500/15 text-signal-400">
+            <Sparkles size={24} />
+          </span>
+          <h2 className="mt-5 max-w-xl font-display text-3xl font-semibold leading-tight">Find the brands your audience already loves</h2>
+          <p className="mt-3 max-w-xl text-ink-soft">
+            Search your show, and the agent reads its audience through Qloo&apos;s taste graph, ranks brands by Fit Score and drafts
+            the pitch. It takes about 20 seconds.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button href="/app/new?q=Radiolab&p=podcast">Try it with Radiolab</Button>
+            <Button href="/app/new" variant="outline">Use my own show</Button>
+          </div>
+        </section>
+      )}
+
       <section aria-label="Key numbers" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard label="Shows analyzed" value={String(SHOWS.length)} icon={<Radar size={18} />} spark={[1, 1, 2, 2, 2, 3]} />
-        <StatCard label="Pitches sent" value={String(stats.sent)} trend="+4 this week" icon={<Send size={18} />} spark={[2, 3, 3, 5, 7, 8, 11]} />
-        <StatCard label="Reply rate" value={`${stats.replyRate}%`} trend="Above creator average" icon={<Reply size={18} />} spark={[30, 38, 35, 44, 50, 55]} />
-        <StatCard label="Deals won" value={`$${stats.wonValue.toLocaleString("en-US")}`} trend={`${stats.wonCount} signed`} icon={<Trophy size={18} />} spark={[0, 0, 500, 500, 2300, 2300]} />
+        <StatCard label="Shows analyzed" value={String(shows.length)} icon={<Radar size={18} />} />
+        <StatCard label="Pitches sent" value={String(sent)} icon={<Send size={18} />} />
+        <StatCard label="Reply rate" value={sent ? `${Math.round((replied / sent) * 100)}%` : "n/a"} trend={sent ? `${replied} of ${sent} replied` : undefined} icon={<Reply size={18} />} />
+        <StatCard label="Deals won" value={`$${won.reduce((s, d) => s + d.amount, 0).toLocaleString("en-US")}`} trend={won.length ? `${won.length} signed` : undefined} icon={<Trophy size={18} />} />
       </section>
 
       <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        {/* Recent analyses */}
         <section className="surface p-5 sm:p-6" aria-labelledby="recent-h">
           <div className="mb-5 flex items-center justify-between">
             <h2 id="recent-h" className="text-lg font-semibold">Recent analyses</h2>
@@ -53,36 +81,41 @@ export default function DashboardPage() {
               View all <ArrowRight size={14} />
             </Link>
           </div>
-          <ul className="divide-y divide-white/[0.06]">
-            {SHOWS.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/app/shows/${s.id}`}
-                  className="group flex items-center gap-4 py-3.5 transition-colors first:pt-0 last:pb-0"
-                >
-                  <span className="h-14 w-14 shrink-0 overflow-hidden rounded-xl">
-                    <CoverArt seed={s.seed} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold group-hover:text-orchid-300">{s.name}</span>
-                    <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
-                      <span className="flex items-center gap-1">
-                        {s.platform === "podcast" ? <Mic size={12} /> : <Play size={12} />}
-                        {s.platform === "podcast" ? "Podcast" : "YouTube"}
-                      </span>
-                      <span>{s.reach}</span>
-                      <span>{s.analyzedOn}</span>
+          {shows.length === 0 ? (
+            <p className="text-sm text-ink-muted">No analyses yet.</p>
+          ) : (
+            <ul className="divide-y divide-white/[0.06]">
+              {shows.slice(0, 5).map((s) => (
+                <li key={s.analysisId}>
+                  <Link
+                    href={s.status === "complete" ? `/app/shows/${s.analysisId}` : `/app/runs/${s.analysisId}`}
+                    className="group flex items-center gap-4 py-3.5 transition-colors first:pt-0 last:pb-0"
+                  >
+                    <span className="h-14 w-14 shrink-0 overflow-hidden rounded-xl">
+                      <CoverArt seed={hashSeed(s.show.name)} />
                     </span>
-                  </span>
-                  <Chip tone="mint" className="hidden sm:inline-flex">Complete</Chip>
-                  <FitRing score={s.topFit} size={50} stroke={5} label={false} />
-                </Link>
-              </li>
-            ))}
-          </ul>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold group-hover:text-orchid-300">{s.show.name}</span>
+                      <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+                        <span className="flex items-center gap-1">
+                          {s.show.platform === "podcast" ? <Mic size={12} /> : <Play size={12} />}
+                          {s.show.platform === "podcast" ? "Podcast" : "YouTube"}
+                        </span>
+                        <span>{compact(s.show.audience_size)} audience</span>
+                        <span>{new Date(s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                      </span>
+                    </span>
+                    <Chip tone={s.status === "complete" ? "mint" : s.status === "failed" ? "signal" : "violet"} className="hidden sm:inline-flex">
+                      {s.status === "complete" ? "Complete" : s.status === "failed" ? "Failed" : "Running"}
+                    </Chip>
+                    {tops[s.analysisId] !== undefined && <FitRing score={tops[s.analysisId]} size={50} stroke={5} label={false} />}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
-        {/* Pipeline snapshot */}
         <section className="surface p-5 sm:p-6" aria-labelledby="pipe-h">
           <div className="mb-5 flex items-center justify-between">
             <h2 id="pipe-h" className="text-lg font-semibold">Pipeline</h2>
@@ -92,7 +125,7 @@ export default function DashboardPage() {
           </div>
           <ul className="space-y-4">
             {STAGES.map((stage) => {
-              const count = DEALS.filter((d) => d.stage === stage).length;
+              const count = deals.filter((d) => d.stage === stage).length;
               return (
                 <li key={stage}>
                   <div className="mb-1.5 flex items-center justify-between text-sm">
@@ -100,46 +133,44 @@ export default function DashboardPage() {
                     <span className="font-semibold tabular-nums">{count}</span>
                   </div>
                   <div className="h-2 rounded-full bg-white/[0.07]">
-                    <div
-                      className={`h-full rounded-full ${STAGE_BAR[stage]}`}
-                      style={{ width: `${(count / maxStage) * 100}%` }}
-                    />
+                    <div className={`h-full rounded-full ${STAGE_BAR[stage]}`} style={{ width: `${(count / maxStage) * 100}%` }} />
                   </div>
                 </li>
               );
             })}
           </ul>
           <p className="mt-5 border-t border-white/[0.06] pt-4 text-sm text-ink-muted">
-            <span className="font-semibold text-ink">{stats.open} conversations</span> are waiting on your next move.
+            {sent === 0 ? (
+              <>No pitches yet. Open a sponsor and press <span className="text-ink">Mark as pitched</span>.</>
+            ) : (
+              <><span className="font-semibold text-ink">{open} conversations</span> are waiting on your next move.</>
+            )}
           </p>
         </section>
       </div>
 
-      {/* Fresh gems */}
-      <section aria-labelledby="gems-h">
-        <div className="mb-4 flex items-center gap-2.5">
-          <Gem size={19} className="text-signal-400" />
-          <h2 id="gems-h" className="text-lg font-semibold">Hidden gems for The Deep Dive</h2>
-          <span className="text-sm text-ink-muted">High fit, low competition</span>
-        </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {gems.map((b) => (
-            <Link
-              key={b.id}
-              href={`/app/sponsors/${b.id}`}
-              className="surface group flex items-center gap-4 p-4 transition-colors hover:border-orchid-400/40"
-            >
-              <BrandMark name={b.name} hue={b.hue} size={52} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold group-hover:text-orchid-300">{b.name}</p>
-                <p className="mt-0.5 truncate text-xs text-ink-muted">{b.category}</p>
-                <p className="mt-1.5 line-clamp-2 text-xs text-ink-soft">{b.reasons[0]}</p>
-              </div>
-              <FitRing score={b.fit} size={52} stroke={5} label={false} />
-            </Link>
-          ))}
-        </div>
-      </section>
+      {gems.length > 0 && latest && (
+        <section aria-labelledby="gems-h">
+          <div className="mb-4 flex flex-wrap items-center gap-2.5">
+            <Gem size={19} className="text-signal-400" />
+            <h2 id="gems-h" className="text-lg font-semibold">Hidden gems for {latest.show.name}</h2>
+            <span className="text-sm text-ink-muted">High fit, low competition</span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {gems.map((b) => (
+              <Link key={b.id} href={`/app/sponsors/${b.id}`} className="surface group flex items-center gap-4 p-4 transition-colors hover:border-orchid-400/40">
+                <BrandMark name={b.name} hue={hueOf(b.name)} size={52} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold group-hover:text-orchid-300">{b.name}</p>
+                  <p className="mt-0.5 truncate text-xs text-ink-muted">{b.category}</p>
+                  <p className="mt-1.5 line-clamp-2 text-xs text-ink-soft">{b.reasons[0]}</p>
+                </div>
+                <FitRing score={b.fit} size={52} stroke={5} label={false} />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

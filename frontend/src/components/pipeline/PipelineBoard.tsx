@@ -6,8 +6,9 @@ import { X } from "lucide-react";
 import { BrandMark } from "@/components/art/BrandMark";
 import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
-import { DEALS, dealStats, getBrand } from "@/lib/mock-data";
-import type { Deal, DealStage } from "@/lib/types";
+import { supabaseBrowser } from "@/lib/supabase/client";
+import { hueOf, type DealStage } from "@/lib/model";
+import type { DealWithBrand } from "@/lib/server/data";
 import { cn } from "@/lib/cn";
 
 const STAGES: DealStage[] = ["Pitched", "Replied", "Negotiating", "Won", "Lost"];
@@ -21,8 +22,12 @@ const DOT: Record<DealStage, string> = {
 
 const money = (n: number) => `$${n.toLocaleString("en-US")}`;
 
-export function PipelineBoard() {
-  const [deals, setDeals] = useState<Deal[]>(DEALS);
+type Deal = DealWithBrand;
+const brandOf = (d: Deal) => ({ id: d.match_id, name: d.matches?.name ?? "Brand", hue: hueOf(d.matches?.name ?? "Brand") });
+
+export function PipelineBoard({ initial }: { initial: Deal[] }) {
+  const [deals, setDeals] = useState<Deal[]>(initial);
+  const [saveError, setSaveError] = useState<string>();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = deals.find((d) => d.id === openId) ?? null;
 
@@ -30,7 +35,7 @@ export function PipelineBoard() {
   const pipelineValue = deals
     .filter((d) => d.stage === "Replied" || d.stage === "Negotiating")
     .reduce((s, d) => s + d.amount, 0);
-  const base = dealStats();
+  const replied = deals.filter((d) => d.stage !== "Pitched").length;
 
   useEffect(() => {
     if (!open) return;
@@ -39,19 +44,27 @@ export function PipelineBoard() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  function move(id: string, stage: DealStage) {
-    setDeals((all) => all.map((d) => (d.id === id ? { ...d, stage, lastActivity: "Just now" } : d)));
+  async function persist(id: string, patch: Partial<Pick<Deal, "stage" | "note" | "amount">>) {
+    const updated_at = new Date().toISOString();
+    setDeals((all) => all.map((d) => (d.id === id ? { ...d, ...patch, updated_at } : d)));
+    const { error } = await supabaseBrowser().from("deals").update({ ...patch, updated_at }).eq("id", id);
+    setSaveError(error ? "Could not save that change. Check your connection." : undefined);
   }
+  const move = (id: string, stage: DealStage) => void persist(id, { stage });
   function setNote(id: string, note: string) {
     setDeals((all) => all.map((d) => (d.id === id ? { ...d, note } : d)));
   }
+  const ago = (iso: string) => {
+    const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    return m < 2 ? "Just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+  };
 
   return (
     <div>
       <dl className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           ["Pitches sent", String(deals.length)],
-          ["Reply rate", `${base.replyRate}%`],
+          ["Reply rate", deals.length ? `${Math.round((replied / deals.length) * 100)}%` : "n/a"],
           ["In play", money(pipelineValue)],
           ["Won", money(wonValue)],
         ].map(([k, v]) => (
@@ -79,7 +92,7 @@ export function PipelineBoard() {
                   <li className="px-3 py-6 text-center text-xs text-ink-faint">Nothing here yet.</li>
                 )}
                 {items.map((d) => {
-                  const b = getBrand(d.brandId);
+                  const b = brandOf(d);
                   return (
                     <li key={d.id} className="surface p-3.5">
                       <button
@@ -91,7 +104,7 @@ export function PipelineBoard() {
                         <BrandMark name={b.name} hue={b.hue} size={36} />
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold">{b.name}</span>
-                          <span className="block text-xs text-ink-muted">{d.lastActivity}</span>
+                          <span className="block text-xs text-ink-muted">{ago(d.updated_at)}</span>
                         </span>
                       </button>
                       <div className="mt-3 flex items-center justify-between gap-2">
@@ -127,7 +140,7 @@ export function PipelineBoard() {
           />
           <aside className="absolute inset-y-0 right-0 flex w-full max-w-md animate-fade-up flex-col border-l border-white/10 bg-eggplant-850 p-6">
             {(() => {
-              const b = getBrand(open.brandId);
+              const b = brandOf(open);
               return (
                 <>
                   <div className="flex items-start justify-between">
@@ -149,12 +162,21 @@ export function PipelineBoard() {
                   </div>
                   <dl className="mt-6 grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-xl bg-white/[0.04] p-3">
-                      <dt className="text-xs text-ink-muted">Deal value</dt>
-                      <dd className="mt-1 font-semibold tabular-nums">{money(open.amount)}</dd>
+                      <dt className="text-xs text-ink-muted"><label htmlFor="deal-amt">Deal value ($)</label></dt>
+                      <dd className="mt-1">
+                        <input
+                          id="deal-amt"
+                          inputMode="numeric"
+                          value={open.amount}
+                          onChange={(e) => setDeals((all) => all.map((d) => (d.id === open.id ? { ...d, amount: Number(e.target.value.replace(/[^0-9]/g, "")) || 0 } : d)))}
+                          onBlur={() => void persist(open.id, { amount: open.amount })}
+                          className="w-full rounded-lg border border-white/10 bg-eggplant-900/70 px-2 py-1 font-semibold tabular-nums"
+                        />
+                      </dd>
                     </div>
                     <div className="rounded-xl bg-white/[0.04] p-3">
                       <dt className="text-xs text-ink-muted">Last activity</dt>
-                      <dd className="mt-1 font-semibold">{open.lastActivity}</dd>
+                      <dd className="mt-1 font-semibold">{ago(open.updated_at)}</dd>
                     </div>
                   </dl>
                   <label htmlFor="deal-note" className="mb-1.5 mt-6 block text-sm font-medium text-ink-soft">Notes</label>
@@ -162,6 +184,7 @@ export function PipelineBoard() {
                     id="deal-note"
                     value={open.note}
                     onChange={(e) => setNote(open.id, e.target.value)}
+                    onBlur={() => void persist(open.id, { note: open.note })}
                     rows={5}
                     className="w-full resize-none rounded-xl border border-white/10 bg-eggplant-900/70 px-4 py-3 text-sm focus:border-orchid-400/70 focus:outline-none focus:ring-2 focus:ring-orchid-400/20"
                   />
@@ -178,10 +201,13 @@ export function PipelineBoard() {
           </aside>
         </div>
       )}
-      <p className="mt-2 text-xs text-ink-faint">
-        Sample deals. Changes stay in this browser tab until the backend is connected.{" "}
-        <Link href="/app/pitches" className="underline hover:text-ink">Start a new pitch</Link>
-      </p>
+      {saveError && <p role="alert" className="mt-2 text-sm text-signal-400">{saveError}</p>}
+      {deals.length === 0 && (
+        <p className="mt-2 text-sm text-ink-muted">
+          No deals yet. Open a pitch and press <span className="text-ink">Mark as pitched</span> to add one.{" "}
+          <Link href="/app/pitches" className="text-violet-300 underline hover:text-orchid-300">Go to pitches</Link>
+        </p>
+      )}
     </div>
   );
 }

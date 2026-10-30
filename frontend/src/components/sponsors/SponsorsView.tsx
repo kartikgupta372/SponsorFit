@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ChevronDown, Filter, Gem, Mail, ShieldCheck, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -10,36 +9,28 @@ import { Switch } from "@/components/ui/Switch";
 import { BrandMark } from "@/components/art/BrandMark";
 import { FitRing } from "@/components/charts/FitRing";
 import { PartsBars } from "@/components/charts/PartsBars";
-import { BRANDS, getShow } from "@/lib/mock-data";
-import { useSettings } from "@/lib/settings";
-import type { BrandScale } from "@/lib/types";
+import { hueOf, type AnalysisRow, type MatchRow, type ProfileRow, type ShowRow } from "@/lib/model";
 import { cn } from "@/lib/cn";
 
-type Sort = "fit" | "gems" | "budget";
-const SCALES: ("All" | BrandScale)[] = ["All", "Local", "Regional", "National"];
-const GENERIC = ["A famous VPN service", "A giant meal-kit company", "An online mattress brand"];
+type Sort = "fit" | "gems" | "crowd";
+type Scale = "All" | "Niche" | "Rising" | "Mainstream";
+const SCALES: Scale[] = ["All", "Niche", "Rising", "Mainstream"];
+const scaleOf = (pop: number | null): Exclude<Scale, "All"> => (pop === null ? "Rising" : pop >= 0.7 ? "Mainstream" : pop >= 0.4 ? "Rising" : "Niche");
 
-export function SponsorsView() {
-  const { id } = useParams<{ id: string }>();
-  const show = getShow(id);
-  const { settings } = useSettings();
+export function SponsorsView({ analysis, show, matches: BRANDS, prefs }: { analysis: AnalysisRow; show: ShowRow; matches: MatchRow[]; prefs: ProfileRow }) {
+  const settings = { safety: prefs.safety as Record<string, boolean> };
+  const GENERIC = analysis.without_qloo.length ? analysis.without_qloo.slice(0, 3) : ["A famous VPN service", "A giant meal-kit company", "An online mattress brand"];
 
   const [category, setCategory] = useState("All");
-  const [scale, setScale] = useState<"All" | BrandScale>("All");
+  const [scale, setScale] = useState<Scale>("All");
   const [gemsOnly, setGemsOnly] = useState(false);
   const [guard, setGuard] = useState(true);
   const [sort, setSort] = useState<Sort>("fit");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(true);
 
-  const categories = useMemo(() => ["All", ...Array.from(new Set(BRANDS.map((b) => b.category)))], []);
+  const categories = useMemo(() => ["All", ...Array.from(new Set(BRANDS.map((b) => b.category)))], [BRANDS]);
 
-  // Competitor guard: hide categories the creator already has a sponsor in.
-  const blockedCategories = useMemo(
-    () =>
-      BRANDS.filter((b) => settings.existingSponsors.includes(b.name)).map((b) => b.category),
-    [settings.existingSponsors],
-  );
 
   const { visible, hiddenBySafety, hiddenByGuard } = useMemo(() => {
     let hiddenBySafety = 0;
@@ -49,7 +40,7 @@ export function SponsorsView() {
         hiddenBySafety++;
         return false;
       }
-      if (guard && blockedCategories.includes(b.category) && !settings.existingSponsors.includes(b.name)) {
+      if (guard && b.competitor_of) {
         hiddenByGuard++;
         return false;
       }
@@ -58,19 +49,18 @@ export function SponsorsView() {
     list = list.filter(
       (b) =>
         (category === "All" || b.category === category) &&
-        (scale === "All" || b.scale === scale) &&
-        (!gemsOnly || b.hiddenGem),
+        (scale === "All" || scaleOf(b.popularity) === scale) &&
+        (!gemsOnly || b.hidden_gem),
     );
-    const rank = { $: 1, $$: 2, $$$: 3 } as const;
     list = [...list].sort((a, b) =>
       sort === "fit"
         ? b.fit - a.fit
         : sort === "gems"
-          ? Number(b.hiddenGem) - Number(a.hiddenGem) || b.fit - a.fit
-          : rank[a.budget] - rank[b.budget] || b.fit - a.fit,
+          ? Number(b.hidden_gem) - Number(a.hidden_gem) || b.fit - a.fit
+          : (a.popularity ?? 0.5) - (b.popularity ?? 0.5) || b.fit - a.fit,
     );
     return { visible: list, hiddenBySafety, hiddenByGuard };
-  }, [category, scale, gemsOnly, guard, sort, settings, blockedCategories]);
+  }, [BRANDS, category, scale, gemsOnly, guard, sort, settings.safety]);
 
   const filters = (
     <div className="space-y-6">
@@ -92,8 +82,8 @@ export function SponsorsView() {
       </div>
 
       <div>
-        <p className="label mb-2">Brand size</p>
-        <div role="radiogroup" aria-label="Brand size" className="grid grid-cols-2 gap-1.5">
+        <p className="label mb-2">Brand reach (Qloo popularity)</p>
+        <div role="radiogroup" aria-label="Brand reach" className="grid grid-cols-2 gap-1.5">
           {SCALES.map((s) => (
             <button
               key={s}
@@ -114,7 +104,7 @@ export function SponsorsView() {
       </div>
 
       <Switch checked={gemsOnly} onChange={setGemsOnly} label="Hidden gems only" hint="High fit, little competition" />
-      <Switch checked={guard} onChange={setGuard} label="Competitor guard" hint={`Hides categories you already sponsor${hiddenByGuard ? ` (${hiddenByGuard} hidden)` : ""}`} />
+      <Switch checked={guard} onChange={setGuard} label="Competitor guard" hint={`Hides competitors of your current sponsors${hiddenByGuard ? ` (${hiddenByGuard} hidden)` : ""}`} />
 
       <div className="rounded-xl border border-white/[0.08] bg-eggplant-900/50 p-3.5">
         <p className="flex items-center gap-2 text-sm font-medium">
@@ -134,7 +124,7 @@ export function SponsorsView() {
     <div>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="label mb-2">Sponsors for {show.name}</p>
+          <p className="label mb-2">Sponsors for {show.name}{analysis.source === "sample" ? " · sample data" : ""}</p>
           <h1 className="font-display text-3xl font-semibold tracking-tight sm:text-4xl">Your best-fit sponsors</h1>
           <p className="mt-2 text-ink-muted">Ranked by Fit Score. Tap a brand to see the evidence behind its number.</p>
         </div>
@@ -149,7 +139,7 @@ export function SponsorsView() {
             >
               <option value="fit">Sort: Fit Score</option>
               <option value="gems">Sort: Hidden gems</option>
-              <option value="budget">Sort: Budget (low first)</option>
+              <option value="crowd">Sort: Least crowded</option>
             </select>
             <ChevronDown size={16} className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
           </div>
@@ -182,7 +172,7 @@ export function SponsorsView() {
                   <li key={g} className="rounded-lg border border-white/[0.06] px-3.5 py-2.5 text-sm text-ink-muted">{g}</li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-ink-faint">Famous names, no proof of fit.</p>
+              <p className="mt-3 text-xs text-ink-faint">What an LLM guesses with no audience data: famous names, no proof of fit.</p>
             </div>
             <div>
               <p className="label mb-3 text-orchid-300">With Qloo taste data</p>
@@ -194,7 +184,7 @@ export function SponsorsView() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-ink-faint">Specific brands with the evidence attached.</p>
+              <p className="mt-3 text-xs text-ink-faint">Brands this audience measurably over-indexes on in Qloo, with the evidence attached.</p>
             </div>
           </div>
         )}
@@ -243,13 +233,15 @@ export function SponsorsView() {
                       <FitRing score={b.fit} size={84} stroke={8} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-2.5">
-                          <BrandMark name={b.name} hue={b.hue} size={34} />
+                          <BrandMark name={b.name} hue={hueOf(b.name)} size={34} />
                           <h2 className="text-lg font-semibold leading-snug">{b.name}</h2>
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                           <Chip>{b.category}</Chip>
-                          <Chip tone="violet">{b.scale}</Chip>
-                          {b.hiddenGem && <Chip tone="signal" icon={<Gem size={11} />}>Hidden gem</Chip>}
+                          <Chip tone="violet">{scaleOf(b.popularity)}</Chip>
+                          {b.safety && <Chip tone="signal">{b.safety}</Chip>}
+                          {b.competitor_of && <Chip>Competes with {b.competitor_of}</Chip>}
+                          {b.hidden_gem && <Chip tone="signal" icon={<Gem size={11} />}>Hidden gem</Chip>}
                         </div>
                       </div>
                     </div>
@@ -269,10 +261,11 @@ export function SponsorsView() {
 
                   <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-4">
                     <span className="text-sm text-ink-muted">
-                      Budget tier <span className="ml-1 font-semibold tracking-wider text-signal-400">{b.budget}</span>
+                      Rank <span className="ml-1 font-semibold text-signal-400">#{b.rank}</span>
+                      {b.tags.length > 0 && <span className="ml-3 hidden sm:inline">Tags: {b.tags.slice(0, 3).join(", ")}</span>}
                     </span>
                     <div className="flex gap-2">
-                      <Button href={`/app/sponsors/${b.id}`} variant="outline" size="sm">View kit</Button>
+                      <Button href={`/app/sponsors/${b.id}`} variant="outline" size="sm">See evidence</Button>
                       <Button href={`/app/pitches/${b.id}`} size="sm"><Mail size={15} /> Draft pitch</Button>
                     </div>
                   </div>

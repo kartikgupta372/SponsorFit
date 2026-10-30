@@ -1,51 +1,18 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import { useState } from "react";
-import { Check, Copy, Lightbulb, MapPin, Mic, Play, RefreshCw } from "lucide-react";
+import { Check, Copy, Database, Lightbulb, MapPin, Mic, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { CoverArt } from "@/components/art/CoverArt";
 import { LogoMark } from "@/components/layout/Logo";
-import { DemoBars } from "@/components/charts/DemoBars";
+import { IndexBars } from "@/components/charts/IndexBars";
 import { UsHeatmap } from "@/components/charts/UsHeatmap";
-import { AGE_BUCKETS, CITIES, GENDER_SPLIT, TASTES, THEMES, getShow } from "@/lib/mock-data";
+import { compact, hashSeed, type AnalysisRow, type AudienceProfile, type MatchRow, type ShowRow } from "@/lib/model";
 import { cn } from "@/lib/cn";
 
 const TABS = ["Overview", "Live & Local", "Episode ideas"] as const;
 type Tab = (typeof TABS)[number];
-
-const LOCAL: Record<string, { name: string; kind: string }[]> = {
-  Seattle: [
-    { name: "Alder & Oak Roasters", kind: "Coffee" },
-    { name: "Summit Gear Exchange", kind: "Outdoor retail" },
-    { name: "Pine Street Books", kind: "Indie bookstore" },
-  ],
-  Denver: [
-    { name: "Foothill Trail Co-op", kind: "Outdoor retail" },
-    { name: "Mile High Provisions", kind: "Food & drink" },
-    { name: "Larkspur Print Shop", kind: "Maker studio" },
-  ],
-  Portland: [
-    { name: "Fernhill Plant House", kind: "Plants" },
-    { name: "Bridgeline Cafe", kind: "Coffee" },
-    { name: "Tinder & Reel", kind: "Film photography" },
-  ],
-  Austin: [
-    { name: "Cedar Street Kitchen", kind: "Restaurant" },
-    { name: "Bluebonnet Outfitters", kind: "Outdoor retail" },
-    { name: "Second Draft Books", kind: "Indie bookstore" },
-  ],
-};
-
-const IDEAS = [
-  { title: "The quiet comeback of the paper map", signal: "National parks", score: 95, why: "Your listeners lean hard into road trips and parks, and nostalgia for analogue navigation travels well." },
-  { title: "What a sound designer hears in a forest", signal: "Nature documentaries", score: 94, why: "Nature documentaries are the single strongest film taste in your audience." },
-  { title: "Inside a small-batch roastery", signal: "Third-wave coffee shops", score: 93, why: "Coffee culture is a top-three theme. A visit episode doubles as a natural sponsor moment." },
-  { title: "Why slow sci-fi sticks with us", signal: "Slow-burn sci-fi", score: 82, why: "A strong film affinity that pairs with your long-form curiosity theme." },
-  { title: "The folk revival nobody planned", signal: "Indie folk", score: 91, why: "Indie folk is your top music taste, so a guest from that scene fits." },
-  { title: "Cooking for one, outdoors", signal: "Farm-to-table", score: 85, why: "Bridges two themes your audience loves: food culture and the outdoors." },
-];
 
 function Card({ title, hint, children, className }: { title: string; hint?: string; children: React.ReactNode; className?: string }) {
   return (
@@ -83,9 +50,10 @@ function ShareCard({ seed, name, themes }: { seed: number; name: string; themes:
   );
 }
 
-export function ShowView() {
-  const { id } = useParams<{ id: string }>();
-  const show = getShow(id);
+export function ShowView({ analysis, show, matches }: { analysis: AnalysisRow; show: ShowRow; matches: MatchRow[] }) {
+  const profile = ("themes" in analysis.profile ? analysis.profile : { themes: [], domains: [], age: [], gender: [], heat: [], episodeIdeas: [], audienceTags: [] }) as AudienceProfile;
+  const seed = hashSeed(show.name);
+  const cities = profile.heat.map((h) => ({ city: h.city, lat: h.lat, lon: h.lon, intensity: h.intensity }));
   const [tab, setTab] = useState<Tab>("Overview");
   const [copied, setCopied] = useState(false);
 
@@ -105,7 +73,7 @@ export function ShowView() {
       <div className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-5">
           <span className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/15 shadow-lift">
-            <CoverArt seed={show.seed} />
+            <CoverArt seed={seed} />
           </span>
           <div>
             <p className="label mb-1.5">Audience DNA</p>
@@ -114,16 +82,18 @@ export function ShowView() {
               <Chip tone="violet" icon={show.platform === "podcast" ? <Mic size={11} /> : <Play size={11} />}>
                 {show.platform === "podcast" ? "Podcast" : "YouTube"}
               </Chip>
-              <Chip>{show.category}</Chip>
-              <span className="text-sm text-ink-muted">Hosted by {show.host} · {show.reach}</span>
+              <Chip tone={analysis.source === "qloo" ? "mint" : "signal"} icon={<Database size={11} />}>
+                {analysis.source === "qloo" ? "Qloo taste data" : "Sample data"}
+              </Chip>
+              <span className="text-sm text-ink-muted">{compact(show.audience_size)} {show.platform === "podcast" ? "listeners / episode" : "views / video"}</span>
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button href={`/app/runs/${show.id}`} variant="outline">
-            <RefreshCw size={16} /> Re-run
+          <Button href="/app/new" variant="outline">
+            <RefreshCw size={16} /> New analysis
           </Button>
-          <Button href={`/app/shows/${show.id}/sponsors`}>See matching sponsors</Button>
+          <Button href={`/app/shows/${analysis.id}/sponsors`}>See {matches.length} matching sponsors</Button>
         </div>
       </div>
 
@@ -154,14 +124,15 @@ export function ShowView() {
         {tab === "Overview" && (
           <div className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-3">
-              <Card title="Age" hint="Filled bar: your audience. White marker: general population.">
-                <DemoBars rows={AGE_BUCKETS} />
+              <Card title="Age" hint="Qloo index vs. the average consumer. Right of centre means over-represented.">
+                <IndexBars rows={profile.age} />
               </Card>
-              <Card title="Gender" hint="Share of your audience versus the general population.">
-                <DemoBars rows={GENDER_SPLIT} />
+              <Card title="Gender" hint="Qloo index vs. the average consumer.">
+                <IndexBars rows={profile.gender} />
+                {profile.summary && <p className="mt-6 border-t border-white/[0.07] pt-4 text-sm leading-relaxed text-ink-soft">{profile.summary}</p>}
               </Card>
               <Card title="Share card" hint="A square summary you can post.">
-                <ShareCard seed={show.seed} name={show.name} themes={THEMES.slice(0, 3)} />
+                <ShareCard seed={seed} name={show.name} themes={profile.themes.slice(0, 3)} />
                 <Button variant="outline" size="sm" className="mt-4 w-full" onClick={copyLink}>
                   {copied ? <Check size={15} /> : <Copy size={15} />}
                   {copied ? "Link copied" : "Copy link"}
@@ -169,9 +140,10 @@ export function ShowView() {
               </Card>
             </div>
 
-            <Card title="Taste map" hint="What your audience loves beyond your show. Higher means a stronger match.">
+            <Card title="Taste map" hint="Qloo taste tags this audience over-indexes on, grouped by domain. 100 is the strongest signal.">
               <div className="grid gap-x-8 gap-y-8 sm:grid-cols-2 xl:grid-cols-4">
-                {TASTES.map((d) => (
+                {profile.domains.length === 0 && <p className="text-sm text-ink-muted">No taste tags returned.</p>}
+                {profile.domains.map((d) => (
                   <div key={d.domain}>
                     <p className="label mb-3.5">{d.domain}</p>
                     <ul className="space-y-3">
@@ -198,9 +170,10 @@ export function ShowView() {
             <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
               <Card title="Where your audience lives" hint="Brighter and larger means a stronger concentration.">
                 <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] md:items-center">
-                  <UsHeatmap cities={CITIES} />
+                  <UsHeatmap cities={cities} />
                   <ol className="space-y-2.5">
-                    {CITIES.slice(0, 6).map((c, i) => (
+                    {cities.length === 0 && <li className="text-sm text-ink-muted">No US heatmap data for this audience.</li>}
+                    {cities.slice(0, 6).map((c, i) => (
                       <li key={c.city} className="flex items-center gap-3 text-sm">
                         <span className="w-5 text-ink-faint tabular-nums">{i + 1}</span>
                         <span className="flex-1">{c.city}</span>
@@ -210,9 +183,9 @@ export function ShowView() {
                   </ol>
                 </div>
               </Card>
-              <Card title="Themes" hint="What they keep coming back to.">
+              <Card title="Themes" hint="Top taste tags from Qloo, strongest first.">
                 <div className="flex flex-wrap gap-2">
-                  {THEMES.map((t, i) => (
+                  {profile.audienceTags.slice(0, 18).map((t, i) => (
                     <Chip key={t} tone={i % 3 === 0 ? "orchid" : i % 3 === 1 ? "violet" : "neutral"}>
                       {t}
                     </Chip>
@@ -226,54 +199,60 @@ export function ShowView() {
         {tab === "Live & Local" && (
           <div>
             <p className="mb-6 max-w-2xl text-ink-muted">
-              Planning a live show or a local giveaway? These are the cities where your audience is
-              most concentrated, with local businesses that fit their tastes.
+              Planning a live show, a meetup or a local giveaway? These are the cities where Qloo&apos;s heatmap shows your
+              audience&apos;s tastes concentrate. Pair them with a top brand for a local activation.
             </p>
-            <div className="grid gap-5 md:grid-cols-2">
-              {CITIES.slice(0, 4).map((c) => (
-                <section key={c.city} className="surface p-5 sm:p-6">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
-                      <MapPin size={18} className="text-orchid-300" /> {c.city}
-                    </h2>
-                    <Chip tone="signal">Heat {c.intensity}</Chip>
-                  </div>
-                  <ul className="space-y-2.5">
-                    {(LOCAL[c.city] ?? []).map((b) => (
-                      <li key={b.name} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-eggplant-900/50 px-4 py-3">
-                        <span className="text-sm font-medium">{b.name}</span>
-                        <Chip>{b.kind}</Chip>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-            <p className="mt-5 text-xs text-ink-faint">Sample data. Local businesses are fictional.</p>
+            {cities.length === 0 ? (
+              <p className="surface p-6 text-sm text-ink-muted">Qloo returned no US heatmap for this audience.</p>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2">
+                {cities.slice(0, 4).map((c, i) => {
+                  const partner = matches.filter((m) => !m.safety)[i];
+                  return (
+                    <section key={c.city} className="surface p-5 sm:p-6">
+                      <div className="mb-4 flex items-center justify-between">
+                        <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+                          <MapPin size={18} className="text-orchid-300" /> {c.city}
+                        </h2>
+                        <Chip tone="signal">Heat {c.intensity}</Chip>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/[0.07]">
+                        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 via-orchid-400 to-signal-500" style={{ width: `${c.intensity}%` }} />
+                      </div>
+                      {partner && (
+                        <p className="mt-4 text-sm text-ink-soft">
+                          Idea: a live taping in {c.city} presented by <span className="font-semibold text-ink">{partner.name}</span>, with a
+                          listener meetup around {profile.themes[i % Math.max(1, profile.themes.length)] ?? "your show"}.
+                        </p>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
         {tab === "Episode ideas" && (
           <div>
             <p className="mb-6 max-w-2xl text-ink-muted">
-              Topics your audience is likely to love, drawn from their strongest tastes. Each one
-              shows the signal behind it.
+              Topics your audience is likely to love, written by the agent from their strongest Qloo taste signals.
             </p>
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {IDEAS.map((idea) => (
-                <article key={idea.title} className="surface flex flex-col p-5 sm:p-6">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-signal-500/15 text-signal-400">
-                    <Lightbulb size={19} />
-                  </span>
-                  <h2 className="mt-4 font-display text-xl font-semibold leading-snug">{idea.title}</h2>
-                  <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">{idea.why}</p>
-                  <div className="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-4">
-                    <Chip tone="violet">{idea.signal}</Chip>
-                    <span className="text-sm font-semibold tabular-nums text-orchid-300">{idea.score} match</span>
-                  </div>
-                </article>
-              ))}
-            </div>
+            {profile.episodeIdeas.length === 0 ? (
+              <p className="surface p-6 text-sm text-ink-muted">Episode ideas need the Groq key. They appear on your next analysis once it is set.</p>
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2">
+                {profile.episodeIdeas.map((idea) => (
+                  <article key={idea.title} className="surface flex flex-col p-5 sm:p-6">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-signal-500/15 text-signal-400">
+                      <Lightbulb size={19} />
+                    </span>
+                    <h2 className="mt-4 font-display text-xl font-semibold leading-snug">{idea.title}</h2>
+                    <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted">{idea.why}</p>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

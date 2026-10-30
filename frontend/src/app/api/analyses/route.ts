@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/supabase/server";
 
-const DAILY_LIMIT = 15;
+import { DAILY_LIMIT } from "@/lib/model";
 
 interface Body {
   name?: string;

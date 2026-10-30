@@ -23,7 +23,7 @@ import { Logo } from "./Logo";
 import { Button } from "@/components/ui/Button";
 import { CoverArt } from "@/components/art/CoverArt";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SHOW_ID, SHOWS, getShow } from "@/lib/mock-data";
+import { hashSeed } from "@/lib/model";
 import { cn } from "@/lib/cn";
 
 interface NavItem {
@@ -37,7 +37,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: "/app", label: "Dashboard", icon: LayoutDashboard, match: (p) => p === "/app", mobile: true },
   { href: "/app/analyses", label: "Analyses", icon: Radar, match: (p) => p.startsWith("/app/analyses") || p.startsWith("/app/runs") || p === "/app/new" || (p.startsWith("/app/shows") && !p.endsWith("/sponsors")), mobile: true },
-  { href: `/app/shows/${DEFAULT_SHOW_ID}/sponsors`, label: "Sponsors", icon: Gem, match: (p) => p.endsWith("/sponsors") || p.startsWith("/app/sponsors"), mobile: true },
+  { href: "/app/sponsors", label: "Sponsors", icon: Gem, match: (p) => p.endsWith("/sponsors") || p.startsWith("/app/sponsors"), mobile: true },
   { href: "/app/pitches", label: "Pitches", icon: Mail, match: (p) => p.startsWith("/app/pitches") },
   { href: "/app/pipeline", label: "Pipeline", icon: KanbanSquare, match: (p) => p.startsWith("/app/pipeline"), mobile: true },
   { href: "/app/kits", label: "Media kits", icon: FileText, match: (p) => p.startsWith("/app/kits") },
@@ -64,12 +64,26 @@ function usePopover() {
   return { open, setOpen, ref };
 }
 
-function ShowSwitcher() {
+export interface ShellShow {
+  analysisId: string;
+  name: string;
+  platform: "podcast" | "youtube";
+  status: string;
+}
+
+function ShowSwitcher({ shows }: { shows: ShellShow[] }) {
   const pathname = usePathname();
   const router = useRouter();
   const { open, setOpen, ref } = usePopover();
   const idFromPath = pathname.match(/^\/app\/(?:shows|runs)\/([^/]+)/)?.[1];
-  const current = getShow(idFromPath ?? DEFAULT_SHOW_ID);
+  const current = shows.find((s) => s.analysisId === idFromPath) ?? shows[0];
+  if (!current) {
+    return (
+      <Link href="/app/new" className="flex h-11 items-center gap-2 rounded-xl border border-dashed border-white/20 px-3 text-sm text-ink-soft hover:border-orchid-400/60 hover:text-ink">
+        <Plus size={16} /> Add your show
+      </Link>
+    );
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -81,7 +95,7 @@ function ShowSwitcher() {
         className="flex h-11 items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.04] pl-1.5 pr-3 transition-colors hover:border-white/25"
       >
         <span className="h-8 w-8 overflow-hidden rounded-lg">
-          <CoverArt seed={current.seed} />
+          <CoverArt seed={hashSeed(current.name)} />
         </span>
         <span className="hidden max-w-[10rem] truncate text-sm font-medium sm:block">{current.name}</span>
         <ChevronDown size={16} className="text-ink-muted" />
@@ -91,18 +105,18 @@ function ShowSwitcher() {
           role="listbox"
           className="surface-raised absolute left-0 top-[calc(100%+8px)] z-50 w-72 overflow-hidden p-1.5"
         >
-          {SHOWS.map((s) => (
-            <li key={s.id} role="option" aria-selected={s.id === current.id}>
+          {shows.map((s) => (
+            <li key={s.analysisId} role="option" aria-selected={s.analysisId === current.analysisId}>
               <button
                 type="button"
                 onClick={() => {
                   setOpen(false);
-                  router.push(`/app/shows/${s.id}`);
+                  router.push(s.status === "complete" ? `/app/shows/${s.analysisId}` : `/app/runs/${s.analysisId}`);
                 }}
                 className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-white/[0.07]"
               >
                 <span className="h-10 w-10 shrink-0 overflow-hidden rounded-lg">
-                  <CoverArt seed={s.seed} />
+                  <CoverArt seed={hashSeed(s.name)} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{s.name}</span>
@@ -111,7 +125,7 @@ function ShowSwitcher() {
                     {s.platform === "podcast" ? "Podcast" : "YouTube"}
                   </span>
                 </span>
-                {s.id === current.id && <Check size={16} className="text-orchid-300" />}
+                {s.analysisId === current.analysisId && <Check size={16} className="text-orchid-300" />}
               </button>
             </li>
           ))}
@@ -132,7 +146,6 @@ function ShowSwitcher() {
 
 function UserMenu() {
   const { user, signOut } = useAuth();
-  const router = useRouter();
   const { open, setOpen, ref } = usePopover();
   const initial = (user?.name ?? "?").charAt(0).toUpperCase();
 
@@ -165,10 +178,7 @@ function UserMenu() {
           <button
             type="button"
             role="menuitem"
-            onClick={() => {
-              signOut();
-              router.replace("/");
-            }}
+            onClick={() => void signOut()}
             className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-ink-soft hover:bg-white/[0.07] hover:text-ink"
           >
             <LogOut size={16} /> Log out
@@ -179,7 +189,7 @@ function UserMenu() {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, shows, used, limit }: { children: ReactNode; shows: ShellShow[]; used: number; limit: number }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, ready } = useAuth();
@@ -217,9 +227,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="surface p-4">
-          <p className="text-sm font-semibold">2 of 3 free runs left today</p>
+          <p className="text-sm font-semibold">{Math.max(0, limit - used)} of {limit} analyses left today</p>
           <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full w-1/3 rounded-full bg-gradient-to-r from-violet-500 via-orchid-400 to-signal-500" />
+            <div className="h-full rounded-full bg-gradient-to-r from-violet-500 via-orchid-400 to-signal-500" style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
           </div>
           <Link href="/#pricing" className="mt-3 inline-block text-xs font-semibold text-orchid-300 hover:text-orchid-200">
             See plans
@@ -234,7 +244,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="lg:hidden">
               <Logo href="/app" size={26} className="[&>span]:hidden" />
             </div>
-            <ShowSwitcher />
+            <ShowSwitcher shows={shows} />
           </div>
           <div className="flex items-center gap-3">
             <Button href="/app/new" size="md">
