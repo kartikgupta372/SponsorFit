@@ -152,6 +152,7 @@ export async function runAgent(
   prefs: Pick<ProfileRow, "existing_sponsors">,
   emit: (e: AgentEvent) => void,
 ): Promise<AgentResult> {
+  await qloo.checkKey();
   const source = qloo.qlooSource();
   const trace: TraceCall[] = [];
   let step: StepKey = "resolve";

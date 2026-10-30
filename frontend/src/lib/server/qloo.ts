@@ -56,7 +56,28 @@ export class QlooError extends Error {
   }
 }
 
-export const qlooSource = (): "qloo" | "sample" => (process.env.QLOO_API_KEY ? "qloo" : "sample");
+let keyState: "unknown" | "ok" | "bad" = "unknown";
+const usableKey = () => {
+  const k = (process.env.QLOO_API_KEY ?? "").trim();
+  return k.length >= 16 && !/your|changeme|placeholder|xxxx/i.test(k);
+};
+
+/** "qloo" only when a plausible key is set and Qloo has not rejected it. Otherwise the labelled sample graph is used. */
+export const qlooSource = (): "qloo" | "sample" => (usableKey() && keyState !== "bad" ? "qloo" : "sample");
+
+/** One cheap probe so a wrong key falls back to sample data up front, not halfway through a run. */
+export async function checkKey(): Promise<void> {
+  if (!usableKey() || keyState !== "unknown") return;
+  try {
+    const res = await fetch(`${BASE}/search?query=radiolab&take=1`, {
+      headers: { "X-Api-Key": process.env.QLOO_API_KEY!, Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    keyState = res.status === 401 || res.status === 403 ? "bad" : "ok";
+  } catch {
+    /* network blip: stay unknown and let the normal retry path handle it */
+  }
+}
 
 const BASE = (process.env.QLOO_BASE_URL || "https://hackathon.api.qloo.com").replace(/\/$/, "");
 const CACHE = new Map<string, { at: number; value: unknown }>();
@@ -190,6 +211,7 @@ async function get(path: string, params: Record<string, string>, trace: CallReco
 /* -------------------------------------------------------------------------- */
 
 export async function search(query: string, types: string[], take = 8, trace: CallRecord[] | null = null) {
+  await checkKey();
   if (qlooSource() === "sample") return sampleQloo.search(query, types, trace);
   const items = await get("/search", encode({ query, take, types }), trace, "entities");
   return items.map(toEntity).filter((e): e is QlooEntity => !!e);
