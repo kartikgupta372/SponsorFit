@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-eggplant-950 font-sans text-ink antialiased;
+  background-image:
+    radial-gradient(60rem 40rem at 85% -10%, rgba(139, 92, 246, 0.22), transparent 60%),
+    radial-gradient(50rem 36rem at -10% 10%, rgba(239, 127, 216, 0.12), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100dvh;
+}
+
+::selection {
+  background: rgba(239, 127, 216, 0.4);
+  color: #fff;
+}
+
+/* Visible keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid #ef7fd8;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Thin scrollbars that match the theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3a1f5f transparent;
+}
+
+@layer components {
+  /* One flat surface style, used for every card. Borders, not shadows. */
+  .surface {
+    @apply rounded-2xl border border-white/[0.08] bg-eggplant-850/80;
+  }
+  .surface-raised {
+    @apply rounded-2xl border border-white/[0.1] bg-eggplant-800/70 shadow-lift;
+  }
+  .text-gradient {
+    background-image: linear-gradient(100deg, #f5a3e6 0%, #ef7fd8 35%, #ff8a3d 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .hairline {
+    @apply border-white/[0.08];
+  }
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.1) 37%, rgba(255,255,255,0.04) 63%);
+    background-size: 800px 100%;
+    @apply animate-shimmer rounded-lg;
+  }
+  .label {
+    @apply text-xs font-medium uppercase tracking-[0.14em] text-ink-muted;
+  }
+}
+
+/* Honour the visitor's motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Printing the media kit to PDF: keep colours and drop the dark page. */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body {
+    background: #fff !important;
+  }
+}
